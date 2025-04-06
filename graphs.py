@@ -1,5 +1,8 @@
 import os
 import plotly.graph_objects as go
+import plotly.io as pio
+# Memory issue fix
+pio.kaleido.scope.chromium_args = tuple([arg for arg in pio.kaleido.scope.chromium_args if arg != "--disable-dev-shm-usage"])
 
 def get_selection(files):
     """Let user select files for combined plot"""
