@@ -42,22 +42,36 @@ def create_plot(files, out_file):
     
     # Customize and save plot if we have data
     if fig.data:
+        # Get axis labels from user
+        x_label = "Time [ns]"
+        y_label = "Number of water molecules"
+        
         fig.update_layout(
             template='seaborn',  # Use seaborn style
             margin=dict(l=20, r=20, t=20, b=20),  # Small margins
             
             # Legend settings
             legend=dict(
-                x=0.98, y=0.98,  # Position in top-right
-                font=dict(size=23),  # Large text
-                xanchor='right', yanchor='top',
+                y=-0.1,  # Position below the plot
+                x=0.5,   # Center horizontally
+                font=dict(size=20),  # Large text
+                xanchor='center',  # Center the legend
+                yanchor='top',     # Anchor to top of legend
                 bgcolor='rgba(0,0,0,0)',  # Transparent background
                 bordercolor='rgba(0,0,0,0)'  # Transparent border
             ),
             
             # Axis settings
-            xaxis=dict(tickfont=dict(size=23), title_font=dict(size=23)),  # Medium text
-            yaxis=dict(tickfont=dict(size=23), title_font=dict(size=23))  # Medium text
+            xaxis=dict(
+                title=x_label,  # Custom X-axis label
+                tickfont=dict(size=20),
+                title_font=dict(size=20)
+            ),
+            yaxis=dict(
+                title=y_label,  # Custom Y-axis label
+                tickfont=dict(size=20),
+                title_font=dict(size=20)
+            )
         )
         
         # Save high-quality PNG
