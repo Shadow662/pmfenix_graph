@@ -22,9 +22,31 @@ def get_selection(files):
         names = [n.strip().strip('"\'') + ('' if n.endswith('.txt') else '.txt') for n in sel.split(',')]
         return [f for f in files if f in names] or print("No matches. Try again.")
 
+def find_common_prefix(strings):
+    """Find the longest common prefix among a list of strings"""
+    if not strings:
+        return ""
+    prefix = strings[0]
+    for s in strings[1:]:
+        while not s.startswith(prefix):
+            prefix = prefix[:-1]
+            if not prefix:
+                return ""
+    return prefix
+
 def create_plot(files, out_file):
     """Create a plot from data files and save as PNG"""
     fig = go.Figure()
+    
+    # Find common prefix in filenames for combined plot
+    if len(files) > 1:
+        common_prefix = find_common_prefix([os.path.splitext(os.path.basename(f))[0] for f in files])
+    else:
+        common_prefix = ""
+    
+    # Store statistics for combined plot
+    all_avgs = []
+    all_stds = []
     
     # Read data from each file
     for f in files:
@@ -39,27 +61,55 @@ def create_plot(files, out_file):
         # Add line plot for this file
         if x and y:
             # Convert to numpy arrays for calculations
-            x_np = np.array(x)
             y_np = np.array(y)
             
             # Calculate last 20% of points
-            n_points = len(x)
+            n_points = len(y)
             last_20_percent = round(n_points * 0.2)
-            x_last = x_np[-last_20_percent:]
             y_last = y_np[-last_20_percent:]
+            
+            # Calculate statistics for last 20%
+            avg = np.mean(y_last)
+            std = np.std(y_last)
+            
+            # Store statistics for combined plot
+            all_avgs.append(avg)
+            all_stds.append(std)
+            
+            # Get filename for legend
+            filename = os.path.splitext(os.path.basename(f))[0]
+            if common_prefix and len(files) > 1:
+                # Remove common prefix for combined plot
+                legend_name = filename[len(common_prefix):] or filename
+            else:
+                legend_name = filename
             
             # Add original data plot
             fig.add_trace(go.Scatter(x=x, y=y, mode='lines', line=dict(width=1.5),
-                                   name=os.path.splitext(os.path.basename(f))[0], showlegend=True))
-            
-            # Calculate regression line for last 20%
-            slope, intercept = np.polyfit(x_last, y_last, 1)
-            
-            # Add regression line across full x range
-            regression_y = slope * x_np + intercept
-            fig.add_trace(go.Scatter(x=x, y=regression_y, mode='lines', 
-                                   line=dict(width=3, dash='solid'),
-                                   showlegend=True))
+                                   name=legend_name, showlegend=True))
+    
+    # Add statistics annotation
+    if len(files) > 1:
+        # For combined plot, show average of averages and average of standard deviations
+        avg_of_avgs = np.mean(all_avgs)
+        avg_of_stds = np.mean(all_stds)
+        stats_text = f"Average of Averages: {avg_of_avgs:.2f}<br>Average of Standard Deviations: {avg_of_stds:.2f}" #-------------------------------- Here change text of average of averages and average of standard deviations
+    else:
+        # For single plot, show individual statistics
+        stats_text = f"Average: {all_avgs[0]:.2f}<br>Standard Deviation: {all_stds[0]:.2f}" #-------------------------------- Here change text of average and standard deviation
+    
+    fig.add_annotation(
+        xref="paper", yref="paper",
+        x=0.98, y=0.98,  # Top right corner
+        text=stats_text,
+        showarrow=False,
+        font=dict(size=25), #-------------------------------- Here change font size of average and standard deviation
+        align="right",
+        bgcolor="rgba(0,0,0,0.0)",
+        bordercolor="rgba(0,0,0,0.0)",
+        borderwidth=1,
+        borderpad=4
+    )
     
     # Customize and save plot if we have data
     if fig.data:
@@ -124,8 +174,6 @@ def main():
             return print(f"No files matching filter '{filter_pattern}' found")
         files = filtered_files
         print(f"\nFound {len(files)} files matching filter '{filter_pattern}'")
-    else:
-        print(f"\nProcessing all {len(files)} .txt files")
     
     # Create individual plots
     print("\nCreating individual plots...")
