@@ -64,8 +64,8 @@ def create_plot(files, out_file):
     # Customize and save plot if we have data
     if fig.data:
         # Get axis labels from user
-        x_label = "Time [ns]"
-        y_label = "Number of water molecules"
+        x_label = "Time [ns]" #-------------------------------- Here change x axis label
+        y_label = "Number of water molecules" #-------------------------------- Here change y axis label
         
         fig.update_layout(
             template='seaborn',  # Use seaborn style
@@ -75,7 +75,7 @@ def create_plot(files, out_file):
             legend=dict(
                 y=-0.1,  # Position below the plot
                 x=0.5,   # Center horizontally
-                font=dict(size=20),  # Large text
+                font=dict(size=20),  # Large text ----------------------------Here change legend font size
                 xanchor='center',  # Center the legend
                 yanchor='top',     # Anchor to top of legend
                 bgcolor='rgba(0,0,0,0)',  # Transparent background
@@ -85,13 +85,13 @@ def create_plot(files, out_file):
             # Axis settings
             xaxis=dict(
                 title=x_label,  # Custom X-axis label
-                tickfont=dict(size=20),
-                title_font=dict(size=20)
+                tickfont=dict(size=25), #-------------------------------- Here change x axis font size
+                title_font=dict(size=25) #-------------------------------- Here change x axis font size
             ),
             yaxis=dict(
                 title=y_label,  # Custom Y-axis label
-                tickfont=dict(size=20),
-                title_font=dict(size=20)
+                tickfont=dict(size=25), #-------------------------------- Here change y axis font size
+                title_font=dict(size=25) #-------------------------------- Here change y axis font size
             )
         )
         
@@ -115,6 +115,17 @@ def main():
     # Find all .txt files
     files = sorted([f for f in os.listdir(path) if f.endswith('.txt')])
     if not files: return print(f"No .txt files in {path}")
+    
+    # Ask for filter
+    filter_pattern = input("\nEnter filter (press Enter to proceed with all files): ").strip()
+    if filter_pattern:
+        filtered_files = [f for f in files if filter_pattern in f]
+        if not filtered_files:
+            return print(f"No files matching filter '{filter_pattern}' found")
+        files = filtered_files
+        print(f"\nFound {len(files)} files matching filter '{filter_pattern}'")
+    else:
+        print(f"\nProcessing all {len(files)} .txt files")
     
     # Create individual plots
     print("\nCreating individual plots...")
