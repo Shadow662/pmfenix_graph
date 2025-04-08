@@ -1,4 +1,5 @@
 import os
+import numpy as np
 import plotly.graph_objects as go
 import plotly.io as pio
 # Memory issue fix
@@ -37,8 +38,28 @@ def create_plot(files, out_file):
         
         # Add line plot for this file
         if x and y:
+            # Convert to numpy arrays for calculations
+            x_np = np.array(x)
+            y_np = np.array(y)
+            
+            # Calculate last 20% of points
+            n_points = len(x)
+            last_20_percent = round(n_points * 0.2)
+            x_last = x_np[-last_20_percent:]
+            y_last = y_np[-last_20_percent:]
+            
+            # Add original data plot
             fig.add_trace(go.Scatter(x=x, y=y, mode='lines', line=dict(width=1.5),
                                    name=os.path.splitext(os.path.basename(f))[0], showlegend=True))
+            
+            # Calculate regression line for last 20%
+            slope, intercept = np.polyfit(x_last, y_last, 1)
+            
+            # Add regression line across full x range
+            regression_y = slope * x_np + intercept
+            fig.add_trace(go.Scatter(x=x, y=regression_y, mode='lines', 
+                                   line=dict(width=3, dash='solid'),
+                                   showlegend=True))
     
     # Customize and save plot if we have data
     if fig.data:
