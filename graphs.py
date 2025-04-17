@@ -89,60 +89,53 @@ def create_plot(files, out_file):
                                    name=filename, showlegend=True))
     
     # Create violin plot
-    if len(files) > 1:
-        # For combined plot, show all last 20% points together
-        violin_fig.add_trace(go.Violin(
-            y=np.concatenate(all_last_20_percent),
-            name="Combined Last 20%",
-            box_visible=True,
-            meanline_visible=True,
-            showlegend=False
-        ))
-    else:
-        # For single plot, show individual violin
-        violin_fig.add_trace(go.Violin(
-            y=all_last_20_percent[0],
-            name="Last 20%",
-            box_visible=True,
-            meanline_visible=True,
-            showlegend=False
-        ))
-    
-    # Customize violin plot
-    violin_fig.update_layout(
-        template='seaborn',
-        margin=dict(l=20, r=20, t=20, b=20),
-        yaxis=dict(
-            title="Number of water molecules",
-            tickfont=dict(size=25),
-            title_font=dict(size=25)
+    if all_last_20_percent:  # Only create violin plot if we have data
+        if len(files) > 1:
+            # For combined plot, show all last 20% points together
+            violin_fig.add_trace(go.Violin(
+                y=np.concatenate(all_last_20_percent),
+                name="Combined Last 20%",
+                box_visible=True,
+                meanline_visible=True,
+                showlegend=True
+            ))
+        else:
+            # For single plot, show individual violin
+            violin_fig.add_trace(go.Violin(
+                y=all_last_20_percent[0],
+                name="Last 20%",
+                box_visible=True,
+                meanline_visible=True,
+                showlegend=True
+            ))
+        
+        # Customize violin plot
+        violin_fig.update_layout(
+            template='seaborn',  # Use seaborn style
+            margin=dict(l=20, r=20, t=20, b=20),  # Small margins
+            
+            # Legend settings
+            legend=dict(
+                y=-0.1,  # Position below the plot
+                x=0.5,   # Center horizontally
+                font=dict(size=20),  # Large text ----------------------------Here change legend font size
+                xanchor='center',  # Center the legend
+                yanchor='top',     # Anchor to top of legend
+                bgcolor='rgba(0,0,0,0)',  # Transparent background
+                bordercolor='rgba(0,0,0,0)'  # Transparent border
+            ),
+            
+            yaxis=dict(
+                title="Number of water molecules",  # Y-axis label
+                tickfont=dict(size=25), #-------------------------------- Here change y axis font size
+                title_font=dict(size=25) #-------------------------------- Here change y axis font size
+            )
         )
-    )
-    
-    # Add statistics annotation
-    if len(files) > 1 and all_avgs and all_stds:
-        # For combined plot, show average of averages and average of standard deviations
-        avg_of_avgs = np.mean(all_avgs)
-        avg_of_stds = np.mean(all_stds)
-        stats_text = f"Average of Averages: {avg_of_avgs:.2f}<br>Average of Standard Deviations: {avg_of_stds:.2f}"
-    elif all_avgs and all_stds:
-        # For single plot, show individual statistics
-        stats_text = f"Average: {all_avgs[0]:.2f}<br>Standard Deviation: {all_stds[0]:.2f}"
-    else:
-        stats_text = "No valid data points found"
-    
-    fig.add_annotation(
-        xref="paper", yref="paper",
-        x=0.98, y=0.98,  # Top right corner
-        text=stats_text,
-        showarrow=False,
-        font=dict(size=25),
-        align="right",
-        bgcolor="rgba(0,0,0,0.0)",
-        bordercolor="rgba(0,0,0,0.0)",
-        borderwidth=1,
-        borderpad=4
-    )
+        
+        # Save violin plot
+        violin_out_file = os.path.splitext(out_file)[0] + '_violin.png'
+        violin_fig.write_image(violin_out_file, width=1920, height=1440, scale=1)
+        print(f'Created: {violin_out_file}')
     
     # Customize and save plot if we have data
     if fig.data:
@@ -176,10 +169,7 @@ def create_plot(files, out_file):
         
         # Save high-quality PNGs
         fig.write_image(out_file, width=1920, height=1440, scale=1)
-        violin_out_file = os.path.splitext(out_file)[0] + '_violin.png'
-        violin_fig.write_image(violin_out_file, width=1920, height=1440, scale=1)
         print(f'Created: {out_file}')
-        print(f'Created: {violin_out_file}')
 
 def main():
     """Main program flow"""
