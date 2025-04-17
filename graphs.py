@@ -10,7 +10,7 @@ def get_selection(files):
     # Show numbered list of available files
     print("\nFiles:", *[f"{i}. {f}" for i, f in enumerate(files, 1)], sep='\n')
     
-    # Get user input
+    # Get user inputx§
     sel = input("\nEnter number or name separated by coma. Press enter to finish: ").strip()
     if not sel: return None  # Skip if empty input
     if sel.lower() == 'all': return files  # Return all files if 'all' selected
@@ -37,6 +37,7 @@ def find_common_prefix(strings):
 def create_plot(files, out_file):
     """Create a plot from data files and save as PNG"""
     fig = go.Figure()
+    violin_fig = go.Figure()  # Create a separate figure for violin plot
     
     # Find common prefix in filenames for combined plot
     if len(files) > 1:
@@ -47,6 +48,7 @@ def create_plot(files, out_file):
     # Store statistics for combined plot
     all_avgs = []
     all_stds = []
+    all_last_20_percent = []  # Store all last 20% points for violin plot
     
     # Read data from each file
     for f in files:
@@ -68,6 +70,9 @@ def create_plot(files, out_file):
             last_20_percent = round(n_points * 0.2)
             y_last = y_np[-last_20_percent:]
             
+            # Store last 20% points for violin plot
+            all_last_20_percent.append(y_last)
+            
             # Calculate statistics for last 20%
             avg = np.mean(y_last)
             std = np.std(y_last)
@@ -76,34 +81,62 @@ def create_plot(files, out_file):
             all_avgs.append(avg)
             all_stds.append(std)
             
-            # Get filename for legend
+            # Get filename for legend - use full filename
             filename = os.path.splitext(os.path.basename(f))[0]
-            if common_prefix and len(files) > 1:
-                # Remove common prefix for combined plot
-                legend_name = filename[len(common_prefix):] or filename
-            else:
-                legend_name = filename
             
-            # Add original data plot
+            # Add original data plot with full filename in legend
             fig.add_trace(go.Scatter(x=x, y=y, mode='lines', line=dict(width=1.5),
-                                   name=legend_name, showlegend=True))
+                                   name=filename, showlegend=True))
+    
+    # Create violin plot
+    if len(files) > 1:
+        # For combined plot, show all last 20% points together
+        violin_fig.add_trace(go.Violin(
+            y=np.concatenate(all_last_20_percent),
+            name="Combined Last 20%",
+            box_visible=True,
+            meanline_visible=True,
+            showlegend=False
+        ))
+    else:
+        # For single plot, show individual violin
+        violin_fig.add_trace(go.Violin(
+            y=all_last_20_percent[0],
+            name="Last 20%",
+            box_visible=True,
+            meanline_visible=True,
+            showlegend=False
+        ))
+    
+    # Customize violin plot
+    violin_fig.update_layout(
+        template='seaborn',
+        margin=dict(l=20, r=20, t=20, b=20),
+        yaxis=dict(
+            title="Number of water molecules",
+            tickfont=dict(size=25),
+            title_font=dict(size=25)
+        )
+    )
     
     # Add statistics annotation
-    if len(files) > 1:
+    if len(files) > 1 and all_avgs and all_stds:
         # For combined plot, show average of averages and average of standard deviations
         avg_of_avgs = np.mean(all_avgs)
         avg_of_stds = np.mean(all_stds)
-        stats_text = f"Average of Averages: {avg_of_avgs:.2f}<br>Average of Standard Deviations: {avg_of_stds:.2f}" #-------------------------------- Here change text of average of averages and average of standard deviations
-    else:
+        stats_text = f"Average of Averages: {avg_of_avgs:.2f}<br>Average of Standard Deviations: {avg_of_stds:.2f}"
+    elif all_avgs and all_stds:
         # For single plot, show individual statistics
-        stats_text = f"Average: {all_avgs[0]:.2f}<br>Standard Deviation: {all_stds[0]:.2f}" #-------------------------------- Here change text of average and standard deviation
+        stats_text = f"Average: {all_avgs[0]:.2f}<br>Standard Deviation: {all_stds[0]:.2f}"
+    else:
+        stats_text = "No valid data points found"
     
     fig.add_annotation(
         xref="paper", yref="paper",
         x=0.98, y=0.98,  # Top right corner
         text=stats_text,
         showarrow=False,
-        font=dict(size=25), #-------------------------------- Here change font size of average and standard deviation
+        font=dict(size=25),
         align="right",
         bgcolor="rgba(0,0,0,0.0)",
         bordercolor="rgba(0,0,0,0.0)",
@@ -114,40 +147,39 @@ def create_plot(files, out_file):
     # Customize and save plot if we have data
     if fig.data:
         # Get axis labels from user
-        x_label = "Time [ns]" #-------------------------------- Here change x axis label
-        y_label = "Number of water molecules" #-------------------------------- Here change y axis label
+        x_label = "Time [ns]"
+        y_label = "Number of water molecules"
         
         fig.update_layout(
-            template='seaborn',  # Use seaborn style
-            margin=dict(l=20, r=20, t=20, b=20),  # Small margins
-            
-            # Legend settings
+            template='seaborn',
+            margin=dict(l=20, r=20, t=20, b=20),
             legend=dict(
-                y=-0.1,  # Position below the plot
-                x=0.5,   # Center horizontally
-                font=dict(size=20),  # Large text ----------------------------Here change legend font size
-                xanchor='center',  # Center the legend
-                yanchor='top',     # Anchor to top of legend
-                bgcolor='rgba(0,0,0,0)',  # Transparent background
-                bordercolor='rgba(0,0,0,0)'  # Transparent border
+                y=-0.1,
+                x=0.5,
+                font=dict(size=20),
+                xanchor='center',
+                yanchor='top',
+                bgcolor='rgba(0,0,0,0)',
+                bordercolor='rgba(0,0,0,0)'
             ),
-            
-            # Axis settings
             xaxis=dict(
-                title=x_label,  # Custom X-axis label
-                tickfont=dict(size=25), #-------------------------------- Here change x axis font size
-                title_font=dict(size=25) #-------------------------------- Here change x axis font size
+                title=x_label,
+                tickfont=dict(size=25),
+                title_font=dict(size=25)
             ),
             yaxis=dict(
-                title=y_label,  # Custom Y-axis label
-                tickfont=dict(size=25), #-------------------------------- Here change y axis font size
-                title_font=dict(size=25) #-------------------------------- Here change y axis font size
+                title=y_label,
+                tickfont=dict(size=25),
+                title_font=dict(size=25)
             )
         )
         
-        # Save high-quality PNG
+        # Save high-quality PNGs
         fig.write_image(out_file, width=1920, height=1440, scale=1)
+        violin_out_file = os.path.splitext(out_file)[0] + '_violin.png'
+        violin_fig.write_image(violin_out_file, width=1920, height=1440, scale=1)
         print(f'Created: {out_file}')
+        print(f'Created: {violin_out_file}')
 
 def main():
     """Main program flow"""
@@ -180,11 +212,23 @@ def main():
     for f in files:
         create_plot([os.path.join(path, f)], os.path.splitext(os.path.join(path, f))[0] + '_plot.png')
     
-    # Create combined plot if requested
-    sel = get_selection(files)
-    if sel:
-        out = os.path.join(path, '-'.join(os.path.splitext(f)[0] for f in sel) + '_plot.png')
+    # Create combined plots in a loop
+    plot_counter = 1
+    while True:
+        sel = get_selection(files)
+        if not sel:
+            break  # Exit if user presses Enter without selection
+            
+        # Find common prefix for output filename
+        if len(sel) > 1:
+            common_prefix = find_common_prefix([os.path.splitext(f)[0] for f in sel])
+            # Create output filename with common prefix removed
+            out = os.path.join(path, f'combined_plot_{plot_counter}_{common_prefix}.png')
+        else:
+            out = os.path.join(path, f'combined_plot_{plot_counter}.png')
+            
         create_plot([os.path.join(path, f) for f in sel], out)
+        plot_counter += 1
     
     print("\nAll graphs plotted successfully!")
 
