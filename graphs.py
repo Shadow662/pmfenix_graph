@@ -5,12 +5,15 @@ import plotly.io as pio
 # Memory issue fix
 pio.kaleido.scope.chromium_args = tuple([arg for arg in pio.kaleido.scope.chromium_args if arg != "--disable-dev-shm-usage"])
 
+# Text size settings
+TEXT_SIZE = 25  #-------------------------------- Here change text size for all graphs
+
 def get_selection(files):
     """Let user select files for combined plot"""
     # Show numbered list of available files
     print("\nFiles:", *[f"{i}. {f}" for i, f in enumerate(files, 1)], sep='\n')
     
-    # Get user inputx§
+    # Get user input
     sel = input("\nEnter number or name separated by coma. Press enter to finish: ").strip()
     if not sel: return None  # Skip if empty input
     if sel.lower() == 'all': return files  # Return all files if 'all' selected
@@ -91,23 +94,51 @@ def create_plot(files, out_file):
     # Create violin plot
     if all_last_20_percent:  # Only create violin plot if we have data
         if len(files) > 1:
-            # For combined plot, show all last 20% points together
-            violin_fig.add_trace(go.Violin(
-                y=np.concatenate(all_last_20_percent),
-                name="Combined Last 20%",
-                box_visible=True,
-                meanline_visible=True,
-                showlegend=True
-            ))
+            # For combined plot, show each file's last 20% points separately
+            for i, (f, y_last) in enumerate(zip(files, all_last_20_percent)):
+                filename = os.path.splitext(os.path.basename(f))[0]
+                violin_fig.add_trace(go.Violin(
+                    y=y_last,
+                    name=filename,  # Use actual filename in legend
+                    box_visible=True,
+                    meanline_visible=True,
+                    showlegend=True
+                ))
         else:
-            # For single plot, show individual violin
+            # For single plot, show individual violin with actual filename
+            filename = os.path.splitext(os.path.basename(files[0]))[0]
             violin_fig.add_trace(go.Violin(
                 y=all_last_20_percent[0],
-                name="Last 20%",
+                name=filename,  # Use actual filename in legend
                 box_visible=True,
                 meanline_visible=True,
                 showlegend=True
             ))
+        
+        # Add statistics to violin plot
+        if len(files) > 1 and all_avgs and all_stds:
+            # For combined plot, show average of averages and average of standard deviations
+            avg_of_avgs = np.mean(all_avgs)
+            avg_of_stds = np.mean(all_stds)
+            violin_stats_text = f"Average of Averages: {avg_of_avgs:.2f}<br>Average of Standard Deviations: {avg_of_stds:.2f}"
+        elif all_avgs and all_stds:
+            # For single plot, show individual statistics
+            violin_stats_text = f"Average: {all_avgs[0]:.2f}<br>Standard Deviation: {all_stds[0]:.2f}"
+        else:
+            violin_stats_text = "No valid data points found"
+        
+        violin_fig.add_annotation(
+            xref="paper", yref="paper",
+            x=0.98, y=0.98,  # Top right corner
+            text=violin_stats_text,
+            showarrow=False,
+            font=dict(size=TEXT_SIZE),
+            align="right",
+            bgcolor="rgba(0,0,0,0.0)",
+            bordercolor="rgba(0,0,0,0.0)",
+            borderwidth=1,
+            borderpad=4
+        )
         
         # Customize violin plot
         violin_fig.update_layout(
@@ -118,17 +149,24 @@ def create_plot(files, out_file):
             legend=dict(
                 y=-0.1,  # Position below the plot
                 x=0.5,   # Center horizontally
-                font=dict(size=20),  # Large text ----------------------------Here change legend font size
+                font=dict(size=TEXT_SIZE-5),  # Slightly smaller than main text
                 xanchor='center',  # Center the legend
                 yanchor='top',     # Anchor to top of legend
                 bgcolor='rgba(0,0,0,0)',  # Transparent background
                 bordercolor='rgba(0,0,0,0)'  # Transparent border
             ),
             
+            xaxis=dict(
+                title="20%",  # X-axis label
+                tickfont=dict(size=TEXT_SIZE),
+                title_font=dict(size=TEXT_SIZE),
+                showticklabels=False  # Hide tick labels
+            ),
+            
             yaxis=dict(
                 title="Number of water molecules",  # Y-axis label
-                tickfont=dict(size=25), #-------------------------------- Here change y axis font size
-                title_font=dict(size=25) #-------------------------------- Here change y axis font size
+                tickfont=dict(size=TEXT_SIZE),
+                title_font=dict(size=TEXT_SIZE)
             )
         )
         
@@ -137,33 +175,62 @@ def create_plot(files, out_file):
         violin_fig.write_image(violin_out_file, width=1920, height=1440, scale=1)
         print(f'Created: {violin_out_file}')
     
+    # Add statistics annotation
+    if len(files) > 1 and all_avgs and all_stds:
+        # For combined plot, show average of averages and average of standard deviations
+        avg_of_avgs = np.mean(all_avgs)
+        avg_of_stds = np.mean(all_stds)
+        stats_text = f"Average of Averages: {avg_of_avgs:.2f}<br>Average of Standard Deviations: {avg_of_stds:.2f}" #-------------------------------- Here change text of average of averages and average of standard deviations
+    elif all_avgs and all_stds:
+        # For single plot, show individual statistics
+        stats_text = f"Average: {all_avgs[0]:.2f}<br>Standard Deviation: {all_stds[0]:.2f}" #-------------------------------- Here change text of average and standard deviation
+    else:
+        stats_text = "No valid data points found"
+    
+    fig.add_annotation(
+        xref="paper", yref="paper",
+        x=0.98, y=0.98,  # Top right corner
+        text=stats_text,
+        showarrow=False,
+        font=dict(size=TEXT_SIZE), #-------------------------------- Here change font size of average and standard deviation
+        align="right",
+        bgcolor="rgba(0,0,0,0.0)",
+        bordercolor="rgba(0,0,0,0.0)",
+        borderwidth=1,
+        borderpad=4
+    )
+    
     # Customize and save plot if we have data
     if fig.data:
         # Get axis labels from user
-        x_label = "Time [ns]"
-        y_label = "Number of water molecules"
+        x_label = "Time [ns]" #-------------------------------- Here change x axis label
+        y_label = "Number of water molecules" #-------------------------------- Here change y axis label
         
         fig.update_layout(
-            template='seaborn',
-            margin=dict(l=20, r=20, t=20, b=20),
+            template='seaborn',  # Use seaborn style
+            margin=dict(l=20, r=20, t=20, b=20),  # Small margins
+            
+            # Legend settings
             legend=dict(
-                y=-0.1,
-                x=0.5,
-                font=dict(size=20),
-                xanchor='center',
-                yanchor='top',
-                bgcolor='rgba(0,0,0,0)',
-                bordercolor='rgba(0,0,0,0)'
+                y=-0.1,  # Position below the plot
+                x=0.5,   # Center horizontally
+                font=dict(size=TEXT_SIZE-5),  # Slightly smaller than main text ----------------------------Here change legend font size
+                xanchor='center',  # Center the legend
+                yanchor='top',     # Anchor to top of legend
+                bgcolor='rgba(0,0,0,0)',  # Transparent background
+                bordercolor='rgba(0,0,0,0)'  # Transparent border
             ),
+            
+            # Axis settings
             xaxis=dict(
-                title=x_label,
-                tickfont=dict(size=25),
-                title_font=dict(size=25)
+                title=x_label,  # Custom X-axis label
+                tickfont=dict(size=TEXT_SIZE), #-------------------------------- Here change x axis font size
+                title_font=dict(size=TEXT_SIZE) #-------------------------------- Here change x axis font size
             ),
             yaxis=dict(
-                title=y_label,
-                tickfont=dict(size=25),
-                title_font=dict(size=25)
+                title=y_label,  # Custom Y-axis label
+                tickfont=dict(size=TEXT_SIZE), #-------------------------------- Here change y axis font size
+                title_font=dict(size=TEXT_SIZE) #-------------------------------- Here change y axis font size
             )
         )
         
