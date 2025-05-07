@@ -114,84 +114,97 @@ def get_differing_parts(strings, common_part):
             parts.append(s)
     return parts
 
-def split_filename(filename):
-    """Split filename into prefix, middle, and suffix parts based on specific pattern"""
+def find_varying_parts(files):
+    """Find parts that vary between files by comparing their components"""
+    if not files or len(files) == 1:
+        return []
+    
+    # Split all filenames into parts
+    all_parts = []
+    for f in files:
+        base_name = os.path.splitext(os.path.basename(f))[0]
+        parts = base_name.split('_')
+        all_parts.append(parts)
+    
+    # Find positions where parts differ
+    varying_positions = set()
+    for i in range(len(all_parts[0])):
+        # Get all values at this position
+        values = [parts[i] if i < len(parts) else None for parts in all_parts]
+        # If any value is different from the first one, this position varies
+        if len(set(values)) > 1:
+            varying_positions.add(i)
+    
+    return sorted(list(varying_positions))
+
+def split_filename(filename, varying_positions):
+    """Split filename into parts based on varying positions"""
     # Remove extension
     base_name = os.path.splitext(os.path.basename(filename))[0]
     
-    # Find the last underscore before the varying part
+    # Split by underscores
     parts = base_name.split('_')
-    if len(parts) < 3:
-        return base_name, "", ""
     
-    # Try to find the common prefix (everything before the varying part)
-    prefix_parts = []
-    suffix_parts = []
-    middle_part = ""
+    if not varying_positions:
+        return base_name, [], ""
     
-    # Look for common prefix pattern (e.g., "6v38_1_342_OPM_membrane_H2O_015_KCl")
-    for i in range(len(parts)):
-        if parts[i] in ['atena', 'gaia', 'venus']:  # Add more known middle parts if needed
-            prefix_parts = parts[:i]
-            middle_part = parts[i]
-            suffix_parts = parts[i+1:]
-            break
+    # Split into prefix, varying parts, and suffix
+    prefix = '_'.join(parts[:varying_positions[0]])
+    varying_parts = [parts[i] for i in varying_positions if i < len(parts)]
+    suffix = '_'.join(parts[varying_positions[-1] + 1:])
     
-    if not prefix_parts:
-        return base_name, "", ""
-    
-    prefix = '_'.join(prefix_parts)
-    suffix = '_'.join(suffix_parts)
-    
-    return prefix, middle_part, suffix
+    return prefix, varying_parts, suffix
 
 def get_group_name(files):
-    """Generate a concise, non-redundant group name for a list of files, similar to create_output_filename logic."""
+    """Generate a concise, non-redundant group name for a list of files."""
     if not files:
         return ""
     if len(files) == 1:
         return os.path.basename(files[0])
+    
+    # Get base names without extensions
     base_names = [os.path.splitext(os.path.basename(f))[0] for f in files]
-    def get_common_prefix(names):
-        if not names: return ''
-        prefix = names[0]
-        for name in names[1:]:
-            while not name.startswith(prefix) and prefix:
-                prefix = prefix[:-1]
-        return prefix
-    common_prefix = get_common_prefix(base_names)
-    if common_prefix and common_prefix[-1] == '_':
-        common_prefix = common_prefix[:-1]
-    stripped = [name[len(common_prefix):] if name.startswith(common_prefix) else name for name in base_names]
-    stripped = [s[1:] if s.startswith('_') else s for s in stripped]
-    def get_common_suffix(names):
-        if not names: return ''
-        rev = [name[::-1] for name in names]
-        suffix = rev[0]
-        for name in rev[1:]:
-            while not name.startswith(suffix) and suffix:
-                suffix = suffix[:-1]
-        return suffix[::-1]
-    common_suffix = get_common_suffix(stripped)
-    if common_suffix and common_suffix[0] == '_':
-        common_suffix = common_suffix[1:]
-    unique_middles = []
-    for s in stripped:
-        if common_suffix and s.endswith(common_suffix):
-            middle = s[:-(len(common_suffix))]
-            if middle.endswith('_'):
-                middle = middle[:-1]
-        else:
-            middle = s
-        unique_middles.append(middle)
-    unique_middles = [m for m in unique_middles if m]
+    
+    # Find positions where parts vary
+    varying_positions = find_varying_parts(base_names)
+    
+    # Split each filename into parts
+    file_parts = []
+    for name in base_names:
+        prefix, varying, suffix = split_filename(name, varying_positions)
+        file_parts.append((prefix, varying, suffix))
+    
+    # Find common prefix and suffix
+    common_prefix = file_parts[0][0]
+    common_suffix = file_parts[0][2]
+    
+    for prefix, _, suffix in file_parts[1:]:
+        # Find common prefix
+        while not prefix.startswith(common_prefix) and common_prefix:
+            common_prefix = common_prefix.rsplit('_', 1)[0]
+        
+        # Find common suffix
+        while not suffix.endswith(common_suffix) and common_suffix:
+            common_suffix = common_suffix.split('_', 1)[1]
+    
+    # Collect all unique varying parts
+    all_varying = set()
+    for _, varying, _ in file_parts:
+        all_varying.update(varying)
+    
+    # Build the final name
     parts = []
     if common_prefix:
         parts.append(common_prefix)
-    if unique_middles:
-        parts.append('_'.join(unique_middles))
+    
+    if all_varying:
+        # Sort varying parts to maintain consistent order
+        sorted_varying = sorted(all_varying)
+        parts.append(f"({'_'.join(sorted_varying)})")
+    
     if common_suffix:
         parts.append(common_suffix)
+    
     return '_'.join(parts)
 
 def create_output_filename(files, plot_type, is_combined=False):
@@ -485,6 +498,58 @@ def create_plot(files, out_file):
     except Exception as e:
         print(f"Error in create_plot: {str(e)}")
 
+def process_selection(selection, files, file_errors):
+    """Process selection string and return groups of files"""
+    if not selection: return None
+    if selection.lower() == 'all': return [files]  # Return as a single group
+    
+    # Split by semicolon first to get groups
+    groups = [g.strip() for g in selection.split(';')]
+    result = []
+    
+    for group in groups:
+        if not group: continue
+        
+        # Handle each group (comma-separated)
+        try:
+            # Try to parse as numbers first
+            selected = []
+            for x in group.split(','):
+                x = x.strip()
+                if x.isdigit():
+                    idx = int(x) - 1
+                    if 0 <= idx < len(files):
+                        selected.append(files[idx])
+                    else:
+                        print(f"Warning: Index {x} is out of range. Skipping.")
+                else:
+                    # If not a number, try to match filename
+                    name = x.strip('"\'')
+                    if not name.endswith('.txt'):
+                        name += '.txt'
+                    # Try exact match first
+                    matching_files = [f for f in files if os.path.basename(f) == name]
+                    if not matching_files:
+                        # Try partial match
+                        matching_files = [f for f in files if name in os.path.basename(f)]
+                    if matching_files:
+                        selected.extend(matching_files)
+                    else:
+                        print(f"Warning: No file found matching '{x}'. Skipping.")
+            
+            if selected:
+                result.append(selected)
+            else:
+                print(f"Warning: No valid files found in group: {group}")
+        except Exception as e:
+            err_msg = str(e)
+            if ':' in err_msg:
+                err_msg = err_msg.split(':', 1)[0].strip()
+            print(f"Error processing group '{group}': {err_msg}")
+            continue
+    
+    return result if result else None
+
 def main():
     """Main program flow"""
     try:
@@ -497,14 +562,14 @@ def main():
             print(f"Error: Directory '{path}' doesn't exist")
             return
         
-        files = sorted([f for f in os.listdir(path) if f.endswith('.txt')])
-        if not files:
+        # Pre-validate all files and collect errors
+        file_errors = {}
+        all_files = sorted([f for f in os.listdir(path) if f.endswith('.txt')])
+        if not all_files:
             print(f"Error: No .txt files found in {path}")
             return
         
-        # Pre-validate all files and collect errors before filtering/graphing
-        file_errors = {}
-        for f in files:
+        for f in all_files:
             full_path = os.path.join(path, f)
             try:
                 validate_file(full_path)
@@ -520,70 +585,76 @@ def main():
                     err_msg = err_msg.split(':', 1)[0].strip()
                 file_errors[f] = err_msg
         
-        # Print all files with errors in red if any, before filtering
-        print("\nFiles (before filtering):")
-        for i, f in enumerate(files, 1):
-            if f in file_errors:
-                print(f"{i}. {f} \033[91m({file_errors[f]})\033[0m")
-            else:
-                print(f"{i}. {f}")
-        
-        filter_pattern = input("\nEnter filter (press Enter to proceed with all files): ").strip()
-        if filter_pattern:
-            files = [f for f in files if filter_pattern in f]
-            if not files:
-                print(f"Error: No files matching filter '{filter_pattern}' found")
-                return
-            print(f"\nFound {len(files)} files matching filter '{filter_pattern}'")
-        
-        print("\nCreating individual plots...")
-        for f in files:
-            if f in file_errors:
-                print(f"Skipping {f} due to error: {file_errors[f]}")
-                continue
-            try:
-                full_path = os.path.join(path, f)
-                create_plot([[full_path]], full_path)  # Note the double brackets
-            except DataError as e:
-                err_msg = str(e)
-                if ':' in err_msg:
-                    err_msg = err_msg.split(':', 1)[0].strip()
-                file_errors[f] = err_msg
-                print(f"Error processing file {f}: {err_msg}")
-            except Exception as e:
-                err_msg = str(e)
-                if ':' in err_msg:
-                    err_msg = err_msg.split(':', 1)[0].strip()
-                file_errors[f] = err_msg
-                print(f"Error processing file {f}: {err_msg}")
-        
+        # Start with all files
+        current_files = all_files
         plot_counter = 1
+        
         while True:
-            sel = get_selection(files, file_errors)
-            if not sel: break
-            try:
-                # Convert file names to full paths, but skip files with errors
-                selected_files = []
-                for group in sel:
-                    group_paths = []
-                    for f in group:
-                        if f in file_errors:
-                            print(f"Skipping {f} due to error: {file_errors[f]}")
-                            continue
-                        group_paths.append(os.path.join(path, f))
-                    if group_paths:
-                        selected_files.append(group_paths)
-                if not selected_files:
-                    print("No valid files selected for plotting.")
-                    continue
-                # Create a single plot with all groups
-                create_plot(selected_files, os.path.join(path, f'combined_plot_{plot_counter}'))
-                plot_counter += 1
-            except Exception as e:
-                err_msg = str(e)
-                if ':' in err_msg:
-                    err_msg = err_msg.split(':', 1)[0].strip()
-                print(f"Error creating combined plot: {err_msg}")
+            # Display current files
+            print("\nFiles:")
+            for i, f in enumerate(current_files, 1):
+                if f in file_errors:
+                    print(f"{i}. {f} \033[91m({file_errors[f]})\033[0m")
+                else:
+                    print(f"{i}. {f}")
+            
+            # Get user input
+            user_input = input("\nEnter filter, 'all', 'back', 'exit', or file selection (numbers/names with , or ;): ").strip()
+            
+            if not user_input or user_input.lower() == 'exit':
+                break
+            
+            if user_input.lower() == 'back':
+                current_files = all_files
+                continue
+            
+            if user_input.lower() == 'all':
+                # Create individual plots for all current files
+                print("\nCreating individual plots...")
+                for f in current_files:
+                    if f in file_errors:
+                        print(f"Skipping {f} due to error: {file_errors[f]}")
+                        continue
+                    try:
+                        full_path = os.path.join(path, f)
+                        create_plot([[full_path]], full_path)
+                    except Exception as e:
+                        print(f"Error processing file {f}: {str(e)}")
+                continue
+            
+            # Check if input contains commas or semicolons
+            if ',' in user_input or ';' in user_input:
+                # Process selection directly
+                sel = process_selection(user_input, current_files, file_errors)
+                if sel:
+                    try:
+                        # Convert file names to full paths, but skip files with errors
+                        selected_files = []
+                        for group in sel:
+                            group_paths = []
+                            for f in group:
+                                if f in file_errors:
+                                    print(f"Skipping {f} due to error: {file_errors[f]}")
+                                    continue
+                                group_paths.append(os.path.join(path, f))
+                            if group_paths:
+                                selected_files.append(group_paths)
+                        if selected_files:
+                            create_plot(selected_files, os.path.join(path, f'combined_plot_{plot_counter}'))
+                            plot_counter += 1
+                    except Exception as e:
+                        print(f"Error creating combined plot: {str(e)}")
+                continue
+            
+            # Remove asterisks from filter input
+            filter_input = user_input.replace('*', '')
+            
+            # Treat as filter
+            filtered_files = [f for f in current_files if filter_input in f]
+            if not filtered_files:
+                print(f"No files matching filter '{filter_input}' found")
+                continue
+            current_files = filtered_files
         
         print("\nGraph plotting completed!")
     
