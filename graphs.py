@@ -245,17 +245,23 @@ def read_data(file):
         validate_file(file)
         
         x, y = [], []
+        is_distance = False
         with open(file, 'r') as fp:
             lines = fp.readlines()
             if not lines:
                 raise DataError(f"No data found in file: {file}")
             
             for line in lines:
-                if 'nr_ramki' in line and 'ilosc_wody' in line:
+                # Split line by spaces and filter out empty strings
+                parts = [p for p in line.split() if p]
+                if len(parts) >= 4:  # Ensure we have at least 4 columns
                     try:
-                        p = line.split(';')
-                        x_val = int(p[0].split()[-1])
-                        y_val = int(p[1].split(':')[-1].strip())
+                        # Check if third column starts with 'distance'
+                        if parts[2].lower().startswith('distance'):
+                            is_distance = True
+                        # Get second and fourth columns, strip non-numeric characters
+                        x_val = float(''.join(c for c in parts[1] if c.isdigit() or c == '.' or c == '-'))
+                        y_val = float(''.join(c for c in parts[3] if c.isdigit() or c == '.' or c == '-'))
                         x.append(x_val)
                         y.append(y_val)
                     except (IndexError, ValueError) as e:
@@ -263,6 +269,13 @@ def read_data(file):
         
         if not x or not y:
             raise DataError(f"No valid data points found in file: {file}")
+        
+        # Check if all values are zero
+        if all(val == 0 for val in x):
+            raise DataError("All x values are zero")
+        
+        if all(val == 0 for val in y):
+            raise DataError("All y values are zero")
         
         y_np = np.array(y)
         n_points = len(y)
@@ -274,7 +287,7 @@ def read_data(file):
             raise DataError(f"Not enough data points for 20% calculation in file {file}")
         
         y_last = y_np[-last_20_percent:]
-        return x, y, y_last, np.mean(y_last), np.std(y_last)
+        return x, y, y_last, np.mean(y_last), np.std(y_last), is_distance
     
     except IOError as e:
         raise DataError(f"Error reading file {file}: {str(e)}")
@@ -323,6 +336,9 @@ def create_plot(files, out_file, violin_names=None):
         # Store y_last for each group for p-value calculation
         violin_y_last = []
         
+        # Check if any file has distance data
+        is_distance = False
+        
         # Process each group
         for group_idx, group in enumerate(files):
             if not group: continue
@@ -338,7 +354,8 @@ def create_plot(files, out_file, violin_names=None):
                     if not os.path.exists(f):
                         print(f"Warning: File not found: {f}")
                         continue
-                    x, y, y_last, avg, std = read_data(f)
+                    x, y, y_last, avg, std, file_is_distance = read_data(f)
+                    is_distance = is_distance or file_is_distance
                     all_data.append((x, y, y_last))
                     all_avgs.append(avg)
                     all_stds.append(std)
@@ -453,7 +470,10 @@ def create_plot(files, out_file, violin_names=None):
         if all_violin_y and is_combined_violin:
             max_y = max(all_violin_y)
             min_y = min(all_violin_y)
-            yaxis_range = [max(0, min_y - 20), max_y + 25]
+            if is_distance:
+                yaxis_range = [max(0, min_y - min_y * 0.05), max_y + max_y * 0.05]
+            else:
+                yaxis_range = [max(0, min_y - 20), max_y + 25]
         else:
             yaxis_range = None
 
@@ -464,6 +484,26 @@ def create_plot(files, out_file, violin_names=None):
         ticktext = violin_names if violin_names else [str(i+1) for i in range(len(files))]
         colored_ticktext = [f'<span style="color:{color}">{text}</span>' for color, text in zip(violin_colors, ticktext)]
         
+        # Update scatter plot layout
+        y_title = "Distance [Å]" if is_distance else SCATTER_Y_TITLE
+        fig.update_layout(
+            template='seaborn', margin=dict(l=20, r=20, t=20, b=20),
+            legend=dict(
+                y=-0.1, x=0.5, font=dict(size=LEGEND_SIZE),
+                xanchor='center', yanchor='top',
+                bgcolor='rgba(0,0,0,0)', bordercolor='rgba(0,0,0,0)'
+            ),
+            xaxis=dict(
+                title=SCATTER_X_TITLE,
+                tickfont=dict(size=TEXT_SIZE), title_font=dict(size=TEXT_SIZE)
+            ),
+            yaxis=dict(
+                title=y_title,
+                tickfont=dict(size=TEXT_SIZE), title_font=dict(size=TEXT_SIZE)
+            )
+        )
+        
+        # Update violin plot layout
         violin_layout_kwargs = dict(
             template='seaborn', margin=dict(l=20, r=20, t=20, b=20),
             legend=dict(
@@ -478,7 +518,7 @@ def create_plot(files, out_file, violin_names=None):
                 tickvals=list(range(len(files)))
             ),
             yaxis=dict(
-                title=VIOLIN_Y_TITLE,
+                title=y_title,
                 tickfont=dict(size=TEXT_SIZE), title_font=dict(size=TEXT_SIZE)
             )
         )
@@ -514,23 +554,6 @@ def create_plot(files, out_file, violin_names=None):
                 )
         # --- END P-VALUE ANNOTATIONS ---
 
-        # Update scatter plot layout
-        fig.update_layout(
-            template='seaborn', margin=dict(l=20, r=20, t=20, b=20),
-            legend=dict(
-                y=-0.1, x=0.5, font=dict(size=LEGEND_SIZE),
-                xanchor='center', yanchor='top',
-                bgcolor='rgba(0,0,0,0)', bordercolor='rgba(0,0,0,0)'
-            ),
-            xaxis=dict(
-                title=SCATTER_X_TITLE,
-                tickfont=dict(size=TEXT_SIZE), title_font=dict(size=TEXT_SIZE)
-            ),
-            yaxis=dict(
-                title=SCATTER_Y_TITLE,
-                tickfont=dict(size=TEXT_SIZE), title_font=dict(size=TEXT_SIZE)
-            )
-        )
         # Create output filenames
         all_files = [f for group in files for f in group] if isinstance(files[0], list) else files
         scatter_out = create_output_filename(all_files, "scatter", True)
@@ -677,6 +700,23 @@ def main():
                         create_plot([[full_path]], full_path)
                     except Exception as e:
                         print(f"Error processing file {f}: {str(e)}")
+                continue
+            
+            # Check if input is a single number
+            if user_input.isdigit():
+                idx = int(user_input) - 1
+                if 0 <= idx < len(current_files):
+                    f = current_files[idx]
+                    if f in file_errors:
+                        print(f"Skipping {f} due to error: {file_errors[f]}")
+                        continue
+                    try:
+                        full_path = os.path.join(path, f)
+                        create_plot([[full_path]], full_path)
+                    except Exception as e:
+                        print(f"Error processing file {f}: {str(e)}")
+                else:
+                    print(f"Warning: Index {user_input} is out of range.")
                 continue
             
             # Check if input contains commas or semicolons
