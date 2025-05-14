@@ -2,6 +2,7 @@ import os
 import numpy as np
 import plotly.graph_objects as go
 import plotly.io as pio
+import scipy.stats
 
 # Memory issue fix
 pio.kaleido.scope.chromium_args = tuple([arg for arg in pio.kaleido.scope.chromium_args if arg != "--disable-dev-shm-usage"])
@@ -200,7 +201,8 @@ def get_group_name(files):
     if all_varying:
         # Sort varying parts to maintain consistent order
         sorted_varying = sorted(all_varying)
-        parts.append(f"({'_'.join(sorted_varying)})")
+        # Join varying parts with underscore, without parentheses
+        parts.append('_'.join(sorted_varying))
     
     if common_suffix:
         parts.append(common_suffix)
@@ -291,7 +293,7 @@ def add_statistics_annotation(fig, avg, std, is_combined=False):
         borderwidth=1, borderpad=4
     )
 
-def create_plot(files, out_file):
+def create_plot(files, out_file, violin_names=None):
     """Create a plot from data files and save as PNG"""
     try:
         if not files:
@@ -315,6 +317,11 @@ def create_plot(files, out_file):
         # For singular stats
         singular_avg = None
         singular_std = None
+        
+        # Store colors for each violin
+        violin_colors = []
+        # Store y_last for each group for p-value calculation
+        violin_y_last = []
         
         # Process each group
         for group_idx, group in enumerate(files):
@@ -372,6 +379,8 @@ def create_plot(files, out_file):
                 combined_last = np.concatenate([d[2] for d in all_data])
                 group_name = get_group_name(valid_files)
                 color = pio.templates['seaborn'].layout.colorway[group_idx % len(pio.templates['seaborn'].layout.colorway)]
+                violin_colors.append(color)
+                violin_y_last.append(combined_last)
                 violin_fig.add_trace(go.Violin(
                     y=combined_last, name=group_name, box_visible=True,
                     meanline_visible=True, showlegend=True,
@@ -393,6 +402,8 @@ def create_plot(files, out_file):
             else:
                 group_name = get_group_name(valid_files)
                 color = pio.templates['seaborn'].layout.colorway[group_idx % len(pio.templates['seaborn'].layout.colorway)]
+                violin_colors.append(color)
+                violin_y_last.append(all_data[0][2])
                 violin_fig.add_trace(go.Violin(
                     y=all_data[0][2], name=group_name, box_visible=True,
                     meanline_visible=True, showlegend=True,
@@ -448,6 +459,11 @@ def create_plot(files, out_file):
 
         # Update violin plot layout
         violin_fig.update_xaxes(range=[-0.5, len(files) - 0.5])
+        
+        # Create colored tick labels
+        ticktext = violin_names if violin_names else [str(i+1) for i in range(len(files))]
+        colored_ticktext = [f'<span style="color:{color}">{text}</span>' for color, text in zip(violin_colors, ticktext)]
+        
         violin_layout_kwargs = dict(
             template='seaborn', margin=dict(l=20, r=20, t=20, b=20),
             legend=dict(
@@ -456,8 +472,10 @@ def create_plot(files, out_file):
                 bgcolor='rgba(0,0,0,0)', bordercolor='rgba(0,0,0,0)'
             ),
             xaxis=dict(
-                title=VIOLIN_X_TITLE, tickfont=dict(size=TEXT_SIZE),
-                title_font=dict(size=TEXT_SIZE), showticklabels=False
+                title="", tickfont=dict(size=TEXT_SIZE),
+                title_font=dict(size=TEXT_SIZE), showticklabels=True,
+                ticktext=colored_ticktext,
+                tickvals=list(range(len(files)))
             ),
             yaxis=dict(
                 title=VIOLIN_Y_TITLE,
@@ -467,6 +485,35 @@ def create_plot(files, out_file):
         if yaxis_range:
             violin_layout_kwargs['yaxis']['range'] = yaxis_range
         violin_fig.update_layout(**violin_layout_kwargs)
+
+        # --- P-VALUE ANNOTATIONS BETWEEN VIOLINS ---
+        # Only if there are at least 2 violins
+        if len(violin_y_last) > 1:
+            for i in range(len(violin_y_last) - 1):
+                y1 = violin_y_last[i]
+                y2 = violin_y_last[i+1]
+                # T-test
+                t_stat, p_val = scipy.stats.ttest_ind(y1, y2, equal_var=False)
+                # Color: red if significant, else black; both 70% transparent
+                if p_val < 0.05:
+                    color = 'rgba(255,0,0,0.7)'
+                else:
+                    color = 'rgba(0,0,0,0.7)'
+                # Add p-value and t-value text below the graph
+                violin_fig.add_annotation(
+                    xref="paper", yref="paper",
+                    x=(i + 0.5) / (len(files) - 1), y=-0.1,
+                    text=f"p = {p_val:.2g}<br>t = {t_stat:.2f}",
+                    showarrow=False,
+                    font=dict(size=TEXT_SIZE, color=color),
+                    align="center",
+                    bgcolor="rgba(0,0,0,0.0)",
+                    bordercolor="rgba(0,0,0,0.0)",
+                    borderwidth=0,
+                    borderpad=2
+                )
+        # --- END P-VALUE ANNOTATIONS ---
+
         # Update scatter plot layout
         fig.update_layout(
             template='seaborn', margin=dict(l=20, r=20, t=20, b=20),
@@ -499,13 +546,23 @@ def create_plot(files, out_file):
         print(f"Error in create_plot: {str(e)}")
 
 def process_selection(selection, files, file_errors):
-    """Process selection string and return groups of files"""
-    if not selection: return None
-    if selection.lower() == 'all': return [files]  # Return as a single group
+    """Process selection string and return groups of files and their names"""
+    if not selection: return None, None
+    if selection.lower() == 'all': return [files], None  # Return as a single group
     
     # Split by semicolon first to get groups
     groups = [g.strip() for g in selection.split(';')]
     result = []
+    
+    # Ask for violin names if there are multiple groups
+    violin_names = None
+    if len(groups) > 1:
+        name_input = input("\nEnter names for violins (comma-separated, press Enter to use default numbers): ").strip()
+        if name_input:
+            violin_names = [name.strip() for name in name_input.split(',')]
+            if len(violin_names) != len(groups):
+                print(f"Warning: Number of names ({len(violin_names)}) doesn't match number of groups ({len(groups)}). Using default numbers.")
+                violin_names = None
     
     for group in groups:
         if not group: continue
@@ -548,7 +605,7 @@ def process_selection(selection, files, file_errors):
             print(f"Error processing group '{group}': {err_msg}")
             continue
     
-    return result if result else None
+    return (result if result else None), violin_names
 
 def main():
     """Main program flow"""
@@ -625,7 +682,7 @@ def main():
             # Check if input contains commas or semicolons
             if ',' in user_input or ';' in user_input:
                 # Process selection directly
-                sel = process_selection(user_input, current_files, file_errors)
+                sel, violin_names = process_selection(user_input, current_files, file_errors)
                 if sel:
                     try:
                         # Convert file names to full paths, but skip files with errors
@@ -640,7 +697,7 @@ def main():
                             if group_paths:
                                 selected_files.append(group_paths)
                         if selected_files:
-                            create_plot(selected_files, os.path.join(path, f'combined_plot_{plot_counter}'))
+                            create_plot(selected_files, os.path.join(path, f'combined_plot_{plot_counter}'), violin_names)
                             plot_counter += 1
                     except Exception as e:
                         print(f"Error creating combined plot: {str(e)}")
