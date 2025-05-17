@@ -445,22 +445,22 @@ def create_plot(files, out_file, violin_names=None):
         is_combined = (isinstance(files, list) and (len(files) > 1 or (len(files) == 1 and len(files[0]) > 1)))
         if is_combined and combined_avgs and combined_stds:
             stats_text = f"Average of Averages: {np.mean(combined_avgs):.2f}<br>Average of Standard Deviations: {np.mean(combined_stds):.2f}"
-            for plot in [fig, violin_fig]:
-                plot.add_annotation(
-                    xref="paper", yref="paper", x=0.98, y=0.98,
-                    text=stats_text, showarrow=False, font=dict(size=TEXT_SIZE, color="black"),
-                    align="right", bgcolor="rgba(0,0,0,0.0)", bordercolor="rgba(0,0,0,0.0)",
-                    borderwidth=1, borderpad=4
-                )
+            # Only add annotation to scatter plot, not violin plot
+            fig.add_annotation(
+                xref="paper", yref="paper", x=0.98, y=0.98,
+                text=stats_text, showarrow=False, font=dict(size=TEXT_SIZE, color="black"),
+                align="right", bgcolor="rgba(0,0,0,0.0)", bordercolor="rgba(0,0,0,0.0)",
+                borderwidth=1, borderpad=4
+            )
         if not is_combined and singular_avg is not None and singular_std is not None:
             stats_text = f"Average: {singular_avg:.2f}<br>Standard Deviation: {singular_std:.2f}"
-            for plot in [fig, violin_fig]:
-                plot.add_annotation(
-                    xref="paper", yref="paper", x=0.98, y=0.98,
-                    text=stats_text, showarrow=False, font=dict(size=TEXT_SIZE, color="black"),
-                    align="right", bgcolor="rgba(0,0,0,0.0)", bordercolor="rgba(0,0,0,0.0)",
-                    borderwidth=1, borderpad=4
-                )
+            # Only add annotation to scatter plot, not violin plot
+            fig.add_annotation(
+                xref="paper", yref="paper", x=0.98, y=0.98,
+                text=stats_text, showarrow=False, font=dict(size=TEXT_SIZE, color="black"),
+                align="right", bgcolor="rgba(0,0,0,0.0)", bordercolor="rgba(0,0,0,0.0)",
+                borderwidth=1, borderpad=4
+            )
         # After all violins are added, find the highest data point for y-axis range
         all_violin_y = []
         for trace in violin_fig.data:
@@ -537,13 +537,15 @@ def create_plot(files, out_file, violin_names=None):
                 # Color: red if significant, else black; both 70% transparent
                 if p_val < 0.05:
                     color = 'rgba(255,0,0,0.7)'
+                    significance = "significant"
                 else:
                     color = 'rgba(0,0,0,0.7)'
+                    significance = "not significant"
                 # Add p-value and t-value text below the graph
                 violin_fig.add_annotation(
                     xref="paper", yref="paper",
                     x=(i + 0.5) / (len(files) - 1), y=-0.1,
-                    text=f"p = {p_val:.2g}<br>t = {t_stat:.2f}",
+                    text=f"p = {p_val:.2g}<br>t = {t_stat:.2f}<br>{significance}",
                     showarrow=False,
                     font=dict(size=TEXT_SIZE, color=color),
                     align="center",
@@ -736,9 +738,9 @@ def main():
                                 group_paths.append(os.path.join(path, f))
                             if group_paths:
                                 selected_files.append(group_paths)
-                        if selected_files:
-                            create_plot(selected_files, os.path.join(path, f'combined_plot_{plot_counter}'), violin_names)
-                            plot_counter += 1
+                                if selected_files:
+                                    create_plot(selected_files, os.path.join(path, f'combined_plot_{plot_counter}'), violin_names)
+                        plot_counter += 1
                     except Exception as e:
                         print(f"Error creating combined plot: {str(e)}")
                 continue
